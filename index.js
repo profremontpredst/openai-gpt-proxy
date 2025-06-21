@@ -7,6 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 const OPENAI_KEY = process.env.OPENAI_KEY;
+const GOOGLE_SHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
 
 const SYSTEM_PROMPT = `
 Ты — Анна, сотрудник колл-центра юридической компании, помогаешь списать долги через банкротство.
@@ -31,7 +32,6 @@ app.post("/gpt", async (req, res) => {
   try {
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
 
-    // Приветствие при первом коротком сообщении
     if (messages.length === 1) {
       const msg = messages[0]?.content?.toLowerCase() || "";
       const isGreeting = /привет|здравств|добрый|можно|алло|слушаю/i.test(msg);
@@ -76,7 +76,6 @@ app.post("/gpt", async (req, res) => {
     const fullContent = data.choices?.[0]?.message?.content || "";
     const strippedContent = fullContent.replace("[openLeadForm]", "").trim();
 
-    // Всегда передаём триггер для открытия формы
     const triggerForm = fullContent.includes("[openLeadForm]");
 
     res.json({
@@ -90,14 +89,12 @@ app.post("/gpt", async (req, res) => {
         }
       ]
     });
-
   } catch (e) {
     console.error("❌ GPT proxy error:", e);
     res.status(500).json({ error: "OpenAI Proxy error", details: e.message });
   }
 });
 
-// /lead — задержка 1.5 сек и корректный ответ
 app.post("/lead", async (req, res) => {
   try {
     const { name, phone } = req.body;
@@ -111,7 +108,6 @@ app.post("/lead", async (req, res) => {
       { role: "user", content: `Пользователь отправил форму: Имя: ${name}, Телефон: ${phone}` }
     ];
 
-    // Задержка 1.5 сек (эмулируем ожидание для UX)
     await new Promise(r => setTimeout(r, 1500));
 
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -129,11 +125,16 @@ app.post("/lead", async (req, res) => {
     });
 
     const data = await openaiRes.json();
-    let text = data.choices?.[0]?.message?.content ||
-      "Спасибо! Форма получена. В ближайшее время с вами свяжется юрист. Когда вам удобно принять звонок? Могу ли ещё чем-то помочь?";
+    const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-    res.json({ message: text });
+    // Отправка в Google Таблицу
+    await fetch(GOOGLE_SHEET_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, phone, userId: "не указан", comment })
+    });
 
+    res.json({ message: comment });
   } catch (err) {
     console.error("❌ Ошибка обработки формы:", err);
     res.status(500).json({ error: "Ошибка сервера при получении формы" });
