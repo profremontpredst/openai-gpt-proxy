@@ -9,7 +9,7 @@ app.use(express.json());
 const OPENAI_KEY = process.env.OPENAI_KEY;
 
 const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
-const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/ТВОЙ_НОВЫЙ_ВЕБХУК/exec"; // <<< ЗАМЕНИ ВОТ ЭТО
+const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/AKfycbx3EAsw1PgknW6zoV_DHFeu5xNaOacptUB61NOOQp92o02Z6X6dBVWlWznmxNxf9NYR/exec"; // <<< ЗАМЕНИ ВОТ ЭТО
 
 const SYSTEM_PROMPT = `
 Ты — Анна, сотрудник колл-центра юридической компании, помогаешь списать долги через банкротство.
