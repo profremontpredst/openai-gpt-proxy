@@ -7,7 +7,9 @@ app.use(cors());
 app.use(express.json());
 
 const OPENAI_KEY = process.env.OPENAI_KEY;
-const GOOGLE_SHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
+
+const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
+const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/ТВОЙ_НОВЫЙ_ВЕБХУК/exec"; // <<< ЗАМЕНИ ВОТ ЭТО
 
 const SYSTEM_PROMPT = `
 Ты — Анна, сотрудник колл-центра юридической компании, помогаешь списать долги через банкротство.
@@ -31,6 +33,7 @@ const SYSTEM_PROMPT = `
 app.post("/gpt", async (req, res) => {
   try {
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    const userId = req.body.userId || "неизвестно";
 
     if (messages.length === 1) {
       const msg = messages[0]?.content?.toLowerCase() || "";
@@ -72,11 +75,24 @@ app.post("/gpt", async (req, res) => {
     });
 
     const data = await openaiRes.json();
-
     const fullContent = data.choices?.[0]?.message?.content || "";
     const strippedContent = fullContent.replace("[openLeadForm]", "").trim();
-
     const triggerForm = fullContent.includes("[openLeadForm]");
+
+    // === ⬇️ ЛОГИРОВАНИЕ В ОТДЕЛЬНУЮ ТАБЛИЦУ БЕЗ ПЕРСОНАЛКИ
+    await fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        dialog: messages.map(m => {
+          if (m.role === "user") return "🧑 " + m.content;
+          if (m.role === "assistant") return "🤖 " + m.content;
+          return "";
+        }).join("\n") + "\n🤖 " + strippedContent
+      })
+    });
+    // === ⬆️
 
     res.json({
       choices: [
@@ -127,8 +143,7 @@ app.post("/lead", async (req, res) => {
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-    // Отправка в Google Таблицу
-    await fetch(GOOGLE_SHEET_WEBHOOK, {
+    await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId: "не указан", comment })
