@@ -16,6 +16,8 @@ const SYSTEM_PROMPT = `
 
 Если человек хочет начать процедуру — предложи заполнить заявку и добавь [openLeadForm].
 
+Если форма отправлена — поблагодари и попрощайся.
+
 Говори мягко, с паузами: <break time="400ms" />, <emphasis level="moderate">, <prosody rate="medium">.
 `;
 
