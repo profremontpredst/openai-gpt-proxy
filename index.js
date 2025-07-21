@@ -1,206 +1,162 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Голосовой помощник</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background-color: #f4f4f4;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    .chat-container {
-      display: flex;
-      flex-direction: column;
-      flex-grow: 1;
-      overflow: hidden;
-    }
-    .messages {
-      flex-grow: 1;
-      padding: 20px;
-      overflow-y: auto;
-      background: white;
-    }
-    .message {
-      margin-bottom: 10px;
-    }
-    .user {
-      font-weight: bold;
-      color: #003366;
-    }
-    .input-container {
-      display: flex;
-      border-top: 1px solid #ccc;
-      padding: 10px;
-      background-color: #fff;
-    }
-    .input-container input {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      font-size: 16px;
-    }
-    .input-container button {
-      padding: 10px;
-      margin-left: 10px;
-      background-color: #003366;
-      color: #fff;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    @media (max-width: 768px) {
-      .messages {
-        padding: 10px;
-      }
-      .input-container {
-        padding: 5px;
-      }
-      .input-container input {
-        font-size: 14px;
-      }
-      .input-container button {
-        padding: 8px;
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const OPENAI_KEY = process.env.OPENAI_KEY;
+
+const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
+const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/AKfycbwjw69VW-8l0_Sb-1-vXMVF1gRUeOVpQoxzpVsAuS5ZLWrdu3HPa_CAX8Oq0mHTYBbG/exec"; // <<< ЗАМЕНИ ВОТ ЭТО
+
+const SYSTEM_PROMPT = `
+Ты — Анна, сотрудник колл-центра юридической компании, помогаешь списать долги через банкротство.
+Включаешься после обращения. Говори тепло, просто и по-человечески, неформально, с уважением.
+Не зачитывай законы, не используй сложные фразы. Не говори много за раз.
+Если человек ничего конкретного не сказал — спроси:
+“Можете рассказать, в чём сейчас сложность? Суд уже был или просто не справляетесь с долгами?”
+Используй паузы и мягкую интонацию: <break time="400ms" />, <emphasis level="moderate">, <prosody rate="medium">.
+
+Если человек готов — предложи оставить заявку. Добавь [openLeadForm], чтобы открыть форму.
+После [openLeadForm] не упоминай больше форму и не предлагай оставить заявку повторно — жди отправки формы.
+Пока форма не отправлена — не говори «Записала», не обещай звонка и не пиши, что заявка получена.
+
+Если пользователь отправил форму, не приветствуй его и не пиши “Приятно познакомиться” и другие приветственные фразы. Просто поблагодари, уточни когда удобно принять звонок, скажи что свяжется юрист и задай вопрос “Могу ли ещё чем-то помочь?”.
+
+Если ты уже предложила заполнить форму (добавила [openLeadForm]), больше не упоминай и не предлагай заполнить форму повторно, независимо от того, как продолжается диалог.
+
+Не упоминай, что ты ИИ или ассистент. Ты — Анна, живой человек.
+`;
+
+app.post("/gpt", async (req, res) => {
+  try {
+    const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    const userId = req.body.userId || "неизвестно";
+
+    if (messages.length === 1) {
+      const msg = messages[0]?.content?.toLowerCase() || "";
+      const isGreeting = /привет|здравств|добрый|можно|алло|слушаю/i.test(msg);
+      const isNeutral = msg.length < 20;
+
+      if (isGreeting || isNeutral) {
+        return res.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: `<prosody rate="medium">Рада познакомиться. <break time="300ms" /> Можете рассказать, по какому вопросу обратились?</prosody>`,
+                triggerForm: false
+              }
+            }
+          ]
+        });
       }
     }
-    #lead-form-overlay {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      background-color: rgba(0,0,0,0.4);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 10;
-    }
-    #lead-form-popup {
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      max-width: 400px;
-      width: 90%;
-      position: relative;
-    }
-    .close-btn {
-      position: absolute;
-      right: 10px;
-      top: 10px;
-      cursor: pointer;
-      background: none;
-      border: none;
-      font-size: 18px;
-    }
-  </style>
-</head>
-<body>
-  <div class="chat-container">
-    <div class="messages" id="chat"></div>
-    <div class="input-container">
-      <input type="text" id="user-input" placeholder="Введите сообщение..." />
-      <button onclick="startVoiceInput()">🎤</button>
-      <button onclick="sendMessage()">➤</button>
-    </div>
-  </div>
 
-  <!-- Всплывающая форма -->
-  <div id="lead-form-overlay">
-    <div id="lead-form-popup">
-      <button class="close-btn" onclick="closeLeadForm()">X</button>
-      <h3>Оставьте заявку</h3>
-      <p>Мы перезвоним вам в ближайшее время</p>
-      <form id="lead-form" onsubmit="submitLead(event)">
-        <input type="text" id="name" name="name" placeholder="Ваше имя" required style="width:100%;padding:10px;margin-bottom:10px;">
-        <input type="tel" id="phone" name="phone" value="+7" required style="width:100%;padding:10px;margin-bottom:15px;" maxlength="12">
-        <button type="submit" style="width:100%;padding:10px;background:#003366;color:#fff;border:none;border-radius:5px;">Отправить</button>
-      </form>
-    </div>
-  </div>
-<script>
-  const OPENAI_PROXY_URL = "https://openai-gpt-proxy-sdox.onrender.com/gpt";
-  const LEAD_URL = "https://openai-gpt-proxy-sdox.onrender.com/lead";
+    const chatMessages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...messages.slice(-10)
+    ];
 
-  const chat = document.getElementById("chat");
-  const userInput = document.getElementById("user-input");
-
-  let messages = [];
-  let userId = localStorage.getItem("userId");
-  if (!userId) {
-    userId = "user_" + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem("userId", userId);
-  }
-
-  async function sendMessage() {
-    const text = userInput.value.trim();
-    if (!text) return;
-
-    appendMessage("Пользователь", text);
-    userInput.value = "";
-    messages.push({ role: "user", content: text });
-
-    const res = await fetch(OPENAI_PROXY_URL, {
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, userId })
+      headers: {
+        "Authorization": `Bearer ${OPENAI_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-nano",
+        messages: chatMessages,
+        temperature: 0.7,
+        max_tokens: 200
+      })
     });
 
-    const data = await res.json();
-    const gptMessage = data?.choices?.[0]?.message?.content || "Ошибка: ответ не получен";
-    const triggerForm = data?.choices?.[0]?.message?.triggerForm || false;
+    const data = await openaiRes.json();
+    const fullContent = data.choices?.[0]?.message?.content || "";
+    const strippedContent = fullContent.replace("[openLeadForm]", "").trim();
+    const triggerForm = fullContent.includes("[openLeadForm]");
 
-    appendMessage("🤖 Анна", gptMessage);
-    messages.push({ role: "assistant", content: gptMessage });
-
-    if (triggerForm) showLeadForm();
-  }
-
-  function appendMessage(sender, text) {
-    const msg = document.createElement("div");
-    msg.className = "message";
-    msg.innerHTML = `<span class="user">${sender}:</span> ${text}`;
-    chat.appendChild(msg);
-    chat.scrollTop = chat.scrollHeight;
-  }
-
-  function startVoiceInput() {
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = "ru-RU";
-    recognition.start();
-    recognition.onresult = function (event) {
-      userInput.value = event.results[0][0].transcript;
-    };
-  }
-
-  function showLeadForm() {
-    document.getElementById("lead-form-overlay").style.display = "flex";
-  }
-
-  function closeLeadForm() {
-    document.getElementById("lead-form-overlay").style.display = "none";
-  }
-
-  function submitLead(event) {
-    event.preventDefault();
-    const name = document.getElementById("name").value;
-    const phone = document.getElementById("phone").value;
-
-    fetch(LEAD_URL, {
+    // === ⬇️ ЛОГИРОВАНИЕ В ОТДЕЛЬНУЮ ТАБЛИЦУ БЕЗ ПЕРСОНАЛКИ
+    await fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, userId })
+      body: JSON.stringify({
+        user_id: userId,
+        dialog: messages.map(m => {
+          if (m.role === "user") return "🧑 " + m.content;
+          if (m.role === "assistant") return "🤖 " + m.content;
+          return "";
+        }).join("\n") + "\n🤖 " + strippedContent
+      })
+    });
+    // === ⬆️
+
+    res.json({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: strippedContent,
+            triggerForm
+          }
+        }
+      ]
+    });
+  } catch (e) {
+    console.error("❌ GPT proxy error:", e);
+    res.status(500).json({ error: "OpenAI Proxy error", details: e.message });
+  }
+});
+
+app.post("/lead", async (req, res) => {
+  try {
+    const { name, phone } = req.body;
+
+    if (!name || !phone) {
+      return res.status(400).json({ error: "Имя и телефон обязательны" });
+    }
+
+    const gptLeadMessage = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Пользователь отправил форму: Имя: ${name}, Телефон: ${phone}` }
+    ];
+
+    await new Promise(r => setTimeout(r, 1500));
+
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-nano",
+        messages: gptLeadMessage,
+        temperature: 0.6,
+        max_tokens: 120
+      })
     });
 
-    closeLeadForm();
-    appendMessage("🤖 Анна", "Спасибо! Мы скоро свяжемся с вами.");
-  }
+    const data = await openaiRes.json();
+    const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-  userInput.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") sendMessage();
-  });
-</script>
-</body>
-</html>
+    await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, phone, userId: "не указан", comment })
+    });
+
+    res.json({ message: comment });
+  } catch (err) {
+    console.error("❌ Ошибка обработки формы:", err);
+    res.status(500).json({ error: "Ошибка сервера при получении формы" });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("✅ GPT voice server запущен на порту", PORT);
+});
