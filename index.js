@@ -10,14 +10,18 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 
 const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
 const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/AKfycbwjw69VW-8l0_Sb-1-vXMVF1gRUeOVpQoxzpVsAuS5ZLWrdu3HPa_CAX8Oq0mHTYBbG/exec";
-const GOOGLE_SHEET_LOGS_READ_URL = "https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1";
 
 const SYSTEM_PROMPT = `
 Ты — Анна, сотрудник колл-центра юридической компании. Помогаешь людям списать долги через банкротство. Пиши коротко, тепло, по-человечески, но уверенно. Без сложных слов и законов.
+
 Если человек не объяснил ситуацию, спроси: “В чём сейчас сложность? Уже был суд или просто не справляетесь с долгами?”
+
 Если понимаешь, что человек заинтересован или нужно передать юристу — добавь [openLeadForm], чтобы открыть форму. Не называй цену. Скажи, что всё объяснит юрист после заявки.
+
 После того как вставила [openLeadForm], больше не упоминай про форму, даже если разговор продолжается.
+
 Когда пользователь отправил форму — поблагодари, уточни когда удобно принять звонок, скажи, что свяжется юрист, и задай: “Могу ли ещё чем-то помочь?”
+
 Не пиши длинные сообщения. Ты не ассистент, ты — Анна, человек.
 `;
 
@@ -100,20 +104,16 @@ app.post("/lead", async (req, res) => {
   try {
     const { name, phone, userId } = req.body;
 
-    if (!name || !phone || !userId) {
-      return res.status(400).json({ error: "Имя, телефон и userId обязательны" });
+    if (!name || !phone) {
+      return res.status(400).json({ error: "Имя и телефон обязательны" });
     }
-
-    const logsRes = await fetch(GOOGLE_SHEET_LOGS_READ_URL);
-    const logs = await logsRes.json();
-    const userDialog = logs.find(row => row.user_id === userId)?.dialog || "";
 
     const gptLeadMessage = [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Вот переписка с пользователем:\n${userDialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
+      { role: "user", content: `Пользователь отправил форму: Имя: ${name}, Телефон: ${phone}` }
     ];
 
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
 
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -125,19 +125,21 @@ app.post("/lead", async (req, res) => {
         model: "gpt-4.1-nano",
         messages: gptLeadMessage,
         temperature: 0.6,
-        max_tokens: 150
+        max_tokens: 120
       })
     });
 
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
+    // Отправка в Google Таблицу (ИЗМЕНЕНИЕ ТУТ: userId вместо user_id)
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId, comment })
     });
 
+    // Отправка в Bitrix24
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
