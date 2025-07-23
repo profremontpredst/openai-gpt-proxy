@@ -10,6 +10,7 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 
 const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
 const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/AKfycbwjw69VW-8l0_Sb-1-vXMVF1gRUeOVpQoxzpVsAuS5ZLWrdu3HPa_CAX8Oq0mHTYBbG/exec";
+const GOOGLE_SHEET_LOGS_READ_URL = "https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1";
 
 const SYSTEM_PROMPT = `
 Ты — Анна, сотрудник колл-центра юридической компании. Помогаешь людям списать долги через банкротство. Пиши коротко, тепло, по-человечески, но уверенно. Без сложных слов и законов.
@@ -104,16 +105,21 @@ app.post("/lead", async (req, res) => {
   try {
     const { name, phone, userId } = req.body;
 
-    if (!name || !phone) {
-      return res.status(400).json({ error: "Имя и телефон обязательны" });
+    if (!name || !phone || !userId) {
+      return res.status(400).json({ error: "Имя, телефон и userId обязательны" });
     }
+
+    // Получаем переписку по user_id
+    const logsRes = await fetch(GOOGLE_SHEET_LOGS_READ_URL);
+    const logs = await logsRes.json();
+    const userDialog = logs.find(row => row.user_id === userId)?.dialog || "";
 
     const gptLeadMessage = [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Пользователь отправил форму: Имя: ${name}, Телефон: ${phone}` }
+      { role: "user", content: `Вот переписка с пользователем:\n${userDialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
     ];
 
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1000));
 
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -125,21 +131,21 @@ app.post("/lead", async (req, res) => {
         model: "gpt-4.1-nano",
         messages: gptLeadMessage,
         temperature: 0.6,
-        max_tokens: 120
+        max_tokens: 150
       })
     });
 
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-    // Отправка в Google Таблицу (ИЗМЕНЕНИЕ ТУТ: userId вместо user_id)
+    // Google Таблица с заявками
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId, comment })
     });
 
-    // Отправка в Bitrix24
+    // Bitrix24
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
