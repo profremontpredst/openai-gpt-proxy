@@ -104,47 +104,53 @@ app.post("/gpt", async (req, res) => {
 app.post("/lead", async (req, res) => {
   try {
     const { name, phone, userId } = req.body;
-
     if (!name || !phone || !userId) {
       return res.status(400).json({ error: "Имя, телефон и userId обязательны" });
     }
 
-    // Грузим переписку пользователя из таблицы логов
-    const logsRes = await fetch("https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1");
-    const logs = await logsRes.json();
-    const dialog = logs.find(row => row.userId === userId)?.dialog || "Диалог не найден";
+    // Значение по умолчанию
+    let comment = "Комментарий не получен";
 
-    // Промт для GPT: формулируем комментарий по переписке
-    const gptLeadMessage = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Вот переписка с пользователем:\n${dialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
-    ];
+    try {
+      // 1. Получаем переписку
+      const logsRes = await fetch("https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1");
+      const logs = await logsRes.json();
+      const dialog = logs.find(row => row.userId === userId)?.dialog || "";
 
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-nano",
-        messages: gptLeadMessage,
-        temperature: 0.6,
-        max_tokens: 150
-      })
-    });
+      // 2. Генерация комментария через GPT
+      const gptLeadMessage = [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: `Вот переписка с пользователем:\n${dialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
+      ];
 
-    const data = await openaiRes.json();
-    const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
+      const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENAI_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-nano",
+          messages: gptLeadMessage,
+          temperature: 0.6,
+          max_tokens: 150
+        })
+      });
 
-    // 1. Вносим в Google Таблицу с заявками
+      const data = await openaiRes.json();
+      comment = data.choices?.[0]?.message?.content || comment;
+    } catch (gptErr) {
+      console.warn("⚠️ GPT или логи упали, используем дефолт:", gptErr.message);
+    }
+
+    // 3. Отправка в Google Таблицу лидов
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId, comment })
     });
 
-    // 2. Отправляем в Bitrix24
+    // 4. Отправка в Bitrix24
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -159,12 +165,12 @@ app.post("/lead", async (req, res) => {
     });
 
     res.json({ message: comment });
-
   } catch (err) {
     console.error("❌ Ошибка обработки формы:", err);
     res.status(500).json({ error: "Ошибка сервера при получении формы" });
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
