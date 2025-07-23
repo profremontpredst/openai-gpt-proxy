@@ -132,10 +132,25 @@ app.post("/lead", async (req, res) => {
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
+    // Отправка в Google Таблицу
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId: "не указан", comment })
+    });
+
+    // Отправка в Bitrix24
+    await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: {
+          NAME: name,
+          PHONE: [{ VALUE: phone, VALUE_TYPE: "WORK" }],
+          COMMENTS: comment,
+          SOURCE_ID: "WEB"
+        }
+      })
     });
 
     res.json({ message: comment });
