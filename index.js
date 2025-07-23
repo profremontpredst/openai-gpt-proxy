@@ -78,7 +78,7 @@ app.post("/gpt", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: userId,
+        userId,
         dialog: messages.map(m => m.content).join("\n") + "\n" + strippedContent
       })
     });
@@ -132,14 +132,12 @@ app.post("/lead", async (req, res) => {
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-    // Отправка в Google Таблицу (ИЗМЕНЕНИЕ ТУТ: userId вместо user_id)
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId, comment })
     });
 
-    // Отправка в Bitrix24
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
