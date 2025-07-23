@@ -104,7 +104,6 @@ app.post("/lead", async (req, res) => {
       return res.status(400).json({ error: "Имя, телефон и userId обязательны" });
     }
 
-    // Получаем переписку из таблицы
     const logsRes = await fetch(GOOGLE_SHEET_LOGS_READ_URL);
     const logs = await logsRes.json();
     const userDialog = logs.find(row => row.user_id === userId)?.dialog || "";
@@ -133,14 +132,12 @@ app.post("/lead", async (req, res) => {
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-    // Google таблица
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, userId, comment })
+      body: JSON.stringify({ name, phone, user_id: userId, comment })
     });
 
-    // Bitrix
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
