@@ -109,17 +109,16 @@ app.post("/lead", async (req, res) => {
       return res.status(400).json({ error: "Имя, телефон и userId обязательны" });
     }
 
-    // Получаем переписку по user_id
-    const logsRes = await fetch(GOOGLE_SHEET_LOGS_READ_URL);
+    // Грузим переписку пользователя из таблицы логов
+    const logsRes = await fetch("https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1");
     const logs = await logsRes.json();
-    const userDialog = logs.find(row => row.user_id === userId)?.dialog || "";
+    const dialog = logs.find(row => row.userId === userId)?.dialog || "Диалог не найден";
 
+    // Промт для GPT: формулируем комментарий по переписке
     const gptLeadMessage = [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Вот переписка с пользователем:\n${userDialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
+      { role: "user", content: `Вот переписка с пользователем:\n${dialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
     ];
-
-    await new Promise(r => setTimeout(r, 1000));
 
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -138,14 +137,14 @@ app.post("/lead", async (req, res) => {
     const data = await openaiRes.json();
     const comment = data.choices?.[0]?.message?.content || "Комментарий не получен";
 
-    // Google Таблица с заявками
+    // 1. Вносим в Google Таблицу с заявками
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId, comment })
     });
 
-    // Bitrix24
+    // 2. Отправляем в Bitrix24
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,6 +159,7 @@ app.post("/lead", async (req, res) => {
     });
 
     res.json({ message: comment });
+
   } catch (err) {
     console.error("❌ Ошибка обработки формы:", err);
     res.status(500).json({ error: "Ошибка сервера при получении формы" });
