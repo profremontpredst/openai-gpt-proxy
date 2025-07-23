@@ -135,7 +135,7 @@ app.post("/lead", async (req, res) => {
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, user_id: userId, comment })
+      body: JSON.stringify({ name, phone, userId, comment })
     });
 
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
