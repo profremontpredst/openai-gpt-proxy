@@ -102,7 +102,7 @@ app.post("/gpt", async (req, res) => {
 
 app.post("/lead", async (req, res) => {
   try {
-    const { name, phone } = req.body;
+    const { name, phone, userId } = req.body;
 
     if (!name || !phone) {
       return res.status(400).json({ error: "Имя и телефон обязательны" });
@@ -136,7 +136,7 @@ app.post("/lead", async (req, res) => {
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, userId: "не указан", comment })
+      body: JSON.stringify({ name, phone, user_id: userId, comment })
     });
 
     // Отправка в Bitrix24
@@ -147,7 +147,7 @@ app.post("/lead", async (req, res) => {
         fields: {
           NAME: name,
           PHONE: [{ VALUE: phone, VALUE_TYPE: "WORK" }],
-          COMMENTS: comment,
+          COMMENTS: `User ID: ${userId}\n${comment}`,
           SOURCE_ID: "WEB"
         }
       })
