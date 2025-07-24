@@ -79,7 +79,7 @@ app.post("/gpt", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: userId,
+        userId: userId,
         dialog: messages.map(m => m.content).join("\n") + "\n" + strippedContent
       })
     });
