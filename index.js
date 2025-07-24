@@ -10,46 +10,21 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 
 const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
 const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/AKfycbwjw69VW-8l0_Sb-1-vXMVF1gRUeOVpQoxzpVsAuS5ZLWrdu3HPa_CAX8Oq0mHTYBbG/exec";
-const GOOGLE_SHEET_LOGS_READ_URL = "https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1";
 
 const SYSTEM_PROMPT = `
-Ты — Анна, сотрудник колл-центра юридической компании. Помогаешь людям списать долги через банкротство. Пиши коротко, тепло, по-человечески, но уверенно. Без сложных слов и законов.
+Ты — Анна, помощник и консультант на сайте. Помогаешь пользователям понять, зачем нужен чат-бот на сайте. Рассказываешь, как бот может принимать обращения, работать с CRM, делать рассылки, увеличивать конверсии.
 
-Если человек не объяснил ситуацию, спроси: “В чём сейчас сложность? Уже был суд или просто не справляетесь с долгами?”
+Пиши по-человечески, тепло и просто. Общайся живо, будто ты реальный человек. Без длинных сообщений и официальщины. Будь полезной, дружелюбной и естественной.
 
-Если понимаешь, что человек заинтересован или нужно передать юристу — добавь [openLeadForm], чтобы открыть форму. Не называй цену. Скажи, что всё объяснит юрист после заявки.
+Если человек проявил интерес, спросил цену, спросил как подключить или как с вами связаться — вставь [openLeadForm] и напиши, что можно оставить заявку прямо тут, а вы всё покажете и объясните.
 
-После того как вставила [openLeadForm], больше не упоминай про форму, даже если разговор продолжается.
-
-Когда пользователь отправил форму — поблагодари, уточни когда удобно принять звонок, скажи, что свяжется юрист, и задай: “Могу ли ещё чем-то помочь?”
-
-Не пиши длинные сообщения. Ты не ассистент, ты — Анна, человек.
+После того как вставила [openLeadForm], больше про форму не упоминай, даже если диалог продолжается.
 `;
 
 app.post("/gpt", async (req, res) => {
   try {
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
     const userId = req.body.userId || "неизвестно";
-
-    if (messages.length === 1) {
-      const msg = messages[0]?.content?.toLowerCase() || "";
-      const isGreeting = /привет|здравств|добрый|можно|алло|слушаю/i.test(msg);
-      const isNeutral = msg.length < 20;
-
-      if (isGreeting || isNeutral) {
-        return res.json({
-          choices: [
-            {
-              message: {
-                role: "assistant",
-                content: `Рада познакомиться. Можете рассказать, по какому вопросу обратились?`,
-                triggerForm: false
-              }
-            }
-          ]
-        });
-      }
-    }
 
     const chatMessages = [
       { role: "system", content: SYSTEM_PROMPT },
@@ -75,6 +50,7 @@ app.post("/gpt", async (req, res) => {
     const strippedContent = fullContent.replace("[openLeadForm]", "").trim();
     const triggerForm = fullContent.includes("[openLeadForm]");
 
+    // Сохраняем лог (для себя, GPT не юзает)
     await fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -103,25 +79,17 @@ app.post("/gpt", async (req, res) => {
 
 app.post("/lead", async (req, res) => {
   try {
-    const { name, phone, userId } = req.body;
-    if (!name || !phone || !userId) {
-      return res.status(400).json({ error: "Имя, телефон и userId обязательны" });
+    const { name, phone, userId, messages } = req.body;
+    if (!name || !phone || !userId || !Array.isArray(messages)) {
+      return res.status(400).json({ error: "Имя, телефон, userId и messages обязательны" });
     }
 
-    // Значение по умолчанию
     let comment = "Комментарий не получен";
 
     try {
-      // 1. Получаем переписку
-      await new Promise(r => setTimeout(r, 1500)); // Ждём 1.5 секунды, чтобы лог успел записаться
-      const logsRes = await fetch("https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1");
-      const logs = await logsRes.json();
-      const dialog = logs.find(row => row.userId === userId)?.dialog || "";
-
-      // 2. Генерация комментария через GPT
-      const gptLeadMessage = [
+      const gptLeadPrompt = [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `Вот переписка с пользователем:\n${dialog}\nСформулируй короткий осмысленный комментарий к заявке для CRM.` }
+        { role: "user", content: `Вот вся переписка с пользователем:\n${messages.map(m => m.content).join("\n")}\nСделай краткое резюме ситуации. Напиши, что человек интересовался, какие у него были вопросы. Не пиши длинно.` }
       ];
 
       const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -132,7 +100,7 @@ app.post("/lead", async (req, res) => {
         },
         body: JSON.stringify({
           model: "gpt-4.1-nano",
-          messages: gptLeadMessage,
+          messages: gptLeadPrompt,
           temperature: 0.6,
           max_tokens: 150
         })
@@ -141,17 +109,17 @@ app.post("/lead", async (req, res) => {
       const data = await openaiRes.json();
       comment = data.choices?.[0]?.message?.content || comment;
     } catch (gptErr) {
-      console.warn("⚠️ GPT или логи упали, используем дефолт:", gptErr.message);
+      console.warn("⚠️ GPT ошибка:", gptErr.message);
     }
 
-    // 3. Отправка в Google Таблицу лидов
+    // 1. Google Таблица (для себя)
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, userId, comment })
     });
 
-    // 4. Отправка в Bitrix24
+    // 2. Bitrix
     await fetch("https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -171,7 +139,6 @@ app.post("/lead", async (req, res) => {
     res.status(500).json({ error: "Ошибка сервера при получении формы" });
   }
 });
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
