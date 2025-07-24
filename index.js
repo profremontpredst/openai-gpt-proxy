@@ -113,6 +113,7 @@ app.post("/lead", async (req, res) => {
 
     try {
       // 1. Получаем переписку
+      await new Promise(r => setTimeout(r, 1500)); // Ждём 1.5 секунды, чтобы лог успел записаться
       const logsRes = await fetch("https://opensheet.elk.sh/1NxjfHQ8AMV1b0iX0o2r9jOUgyry3rbCMd8ex1u0BPFs/Sheet1");
       const logs = await logsRes.json();
       const dialog = logs.find(row => row.userId === userId)?.dialog || "";
