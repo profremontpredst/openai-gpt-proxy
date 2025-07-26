@@ -11,7 +11,7 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 const GOOGLE_SHEET_WEBHOOK_LEAD = "https://script.google.com/macros/s/AKfycbyk3j-_HkOqtHblLpqmjwEsfcTqVQCUvINbHtMur3lHywzKIz1brHJEOWvQXSQV3i9uVg/exec";
 const GOOGLE_SHEET_WEBHOOK_LOGS = "https://script.google.com/macros/s/AKfycbwjw69VW-8l0_Sb-1-vXMVF1gRUeOVpQoxzpVsAuS5ZLWrdu3HPa_CAX8Oq0mHTYBbG/exec";
 
-const SYSTEM_PROMPT = `
+const SYSTEM_PROMPT_TEXT = `
 Ты — Анна, помощник и консультант на сайте. Помогаешь пользователям понять, зачем нужен чат-бот на сайте. Рассказываешь, как бот может принимать обращения, работать с CRM, делать рассылки, увеличивать конверсии.
 
 Пиши по-человечески, тепло и просто. Общайся живо, будто ты реальный человек. Без длинных сообщений и официальщины. Будь полезной, дружелюбной и естественной.
@@ -21,10 +21,17 @@ const SYSTEM_PROMPT = `
 После того как вставила [openLeadForm], больше про форму не упоминай, даже если диалог продолжается.
 `;
 
+const SYSTEM_PROMPT_VOICE = `
+Ты — Анна, голосовой помощник. Ты не пишешь, ты говоришь. Отвечай коротко, ясно и эмоционально, как живой человек. Используй тёплый, человечный тон. Добавляй паузы <break time="500ms"/> и выделения <emphasis> в нужных местах. Не говори, что ты бот. Пример: <speak><emphasis>Добрый день!</emphasis> Чем могу помочь?</speak>
+`;
+
 app.post("/gpt", async (req, res) => {
   try {
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
     const userId = req.body.userId || "неизвестно";
+    const mode = req.body.mode === "voice" ? "voice" : "text";
+
+    const SYSTEM_PROMPT = mode === "voice" ? SYSTEM_PROMPT_VOICE : SYSTEM_PROMPT_TEXT;
 
     const chatMessages = [
       { role: "system", content: SYSTEM_PROMPT },
@@ -88,7 +95,7 @@ app.post("/lead", async (req, res) => {
 
     try {
       const gptLeadPrompt = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: SYSTEM_PROMPT_TEXT },
         { role: "user", content: `Вот вся переписка с пользователем:\n${messages.map(m => m.content).join("\n")}\nСделай краткое резюме ситуации. Напиши, что человек интересовался, какие у него были вопросы. Не пиши длинно.` }
       ];
 
