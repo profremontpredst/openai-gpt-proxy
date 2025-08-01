@@ -25,13 +25,27 @@ const SYSTEM_PROMPT_VOICE = `
 Ты — Анна, голосовой помощник. Ты не пишешь, ты говоришь. Отвечай коротко, ясно и эмоционально, как живой человек. Используй тёплый, человечный тон. Добавляй паузы <break time="500ms"/> и выделения <emphasis> в нужных местах. Не говори, что ты бот. Пример: <speak><emphasis>Добрый день!</emphasis> Чем могу помочь?</speak>
 `;
 
+const SYSTEM_PROMPT_PIZZA = `
+Ты — весёлый братюнь, помогаешь выбрать пиццу. Говоришь на сленге: "чувак", "пиццуха", "кайф", "влетай", "залетай", "жирная тема".
+
+Если пользователь просто поздоровался — не предлагай ничего. Узнай, что он любит: "острая", "мясная", "веганская", и только если он заинтересован — вставь [showPizzaPopup].
+
+[showPizzaPopup] вставляй только один раз — не дублируй.
+
+Если человек заполнил форму — ответь как братюнь: "Залетаю с подгончиком — вот тебе скидка на пиццуху 🍕🔥"
+`;
+
 app.post("/gpt", async (req, res) => {
   try {
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
     const userId = req.body.userId || "неизвестно";
-    const mode = req.body.mode === "voice" ? "voice" : "text";
+    const mode = req.body.mode;
 
-    const SYSTEM_PROMPT = mode === "voice" ? SYSTEM_PROMPT_VOICE : SYSTEM_PROMPT_TEXT;
+    const SYSTEM_PROMPT = mode === "voice"
+      ? SYSTEM_PROMPT_VOICE
+      : mode === "pizza"
+        ? SYSTEM_PROMPT_PIZZA
+        : SYSTEM_PROMPT_TEXT;
 
     const chatMessages = [
       { role: "system", content: SYSTEM_PROMPT },
@@ -54,10 +68,12 @@ app.post("/gpt", async (req, res) => {
 
     const data = await openaiRes.json();
     const fullContent = data.choices?.[0]?.message?.content || "";
-    const strippedContent = fullContent.replace("[openLeadForm]", "").trim();
-    const triggerForm = fullContent.includes("[openLeadForm]");
+    const strippedContent = fullContent.replace("[openLeadForm]", "").replace("[showPizzaPopup]", "").trim();
 
-    // Сохраняем лог (для себя, GPT не юзает)
+    const triggerForm = fullContent.includes("[openLeadForm]");
+    const triggerPizzaPopup = fullContent.includes("[showPizzaPopup]");
+
+    // Сохраняем лог
     await fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -73,7 +89,8 @@ app.post("/gpt", async (req, res) => {
           message: {
             role: "assistant",
             content: strippedContent,
-            triggerForm
+            triggerForm,
+            triggerPizzaPopup
           }
         }
       ]
@@ -119,7 +136,7 @@ app.post("/lead", async (req, res) => {
       console.warn("⚠️ GPT ошибка:", gptErr.message);
     }
 
-    // 1. Google Таблица (для себя)
+    // 1. Google Таблица
     await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
