@@ -78,18 +78,18 @@ app.post("/gpt", async (req, res) => {
       })
     });
 
-    res.json({
-      choices: [
-        {
-          message: {
-            role: "assistant",
-            content: strippedContent,
-            triggerForm,
-            triggerPizzaPopup
-          }
-        }
-      ]
-    });
+   res.json({
+  choices: [
+    {
+      message: {
+        role: "assistant",
+        content: strippedContent
+      }
+    }
+  ],
+  triggerForm,
+  triggerPizzaPopup
+});
   } catch (e) {
     console.error("❌ GPT proxy error:", e);
     res.status(500).json({ error: "OpenAI Proxy error", details: e.message });
