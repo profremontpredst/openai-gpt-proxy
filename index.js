@@ -150,6 +150,8 @@ app.post("/gpt", async (req, res) => {
 
     // текст для TTS (жёсткая чистка и урезание)
     const ttsText = sanitizeForTTS(full).slice(0, MAX_TTS_LEN);
+    console.log("FULL GPT:", full);
+    console.log("TTS TEXT:", ttsText);
 
     // простой лог в таблицу
     try {
