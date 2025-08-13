@@ -153,39 +153,35 @@ app.post("/gpt", async (req, res) => {
     console.log("FULL GPT:", full);
     console.log("TTS TEXT:", ttsText);
 
-    // простой лог в таблицу
-    try {
-      await fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          dialog: (messages || []).map(m => m.content).join("\n") + "\n" + displayText
-        })
-      });
-    } catch (logErr) {
-      console.warn("⚠️ LOGS webhook error:", logErr?.message || logErr);
-    }
-
-    // формируем ответ: полностью совместим с твоим фронтом + добавляем voice-поля
-    return res.json({
-      choices: [
-        {
-          message: {
-            role: "assistant",
-            // в контент отдаём displayText (сохраняет витринные теги, убран только [showPizzaPopup])
-            content: displayText
-          }
-        }
-      ],
-      triggerForm,
-      triggerPizzaPopup,
-      voice: {
-        // чистый текст для TTS (без тегов/SSML), фронт может игнорить — не ломает
-        text: ttsText,
-        emotion: inferEmotion(ttsText) // "cheerful" | "empathetic" | "curious" | "neutral" | "serious"
+    // мгновенно отдаём ответ — без ожидания логов
+res.json({
+  choices: [
+    {
+      message: {
+        role: "assistant",
+        content: displayText
       }
-    });
+    }
+  ],
+  triggerForm,
+  triggerPizzaPopup,
+  voice: {
+    text: ttsText,
+    emotion: inferEmotion(ttsText)
+  }
+});
+
+// логируем в фоне, НЕ await
+setImmediate(() => {
+  fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      dialog: (messages || []).map(m => m.content).join("\n") + "\n" + displayText
+    })
+  }).catch(err => console.warn("⚠️ LOGS webhook error:", err?.message || err));
+});
   } catch (e) {
     console.error("❌ GPT proxy error:", e);
     return res.status(500).json({ error: "OpenAI Proxy error", details: e.message });
