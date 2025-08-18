@@ -19,7 +19,7 @@ const GOOGLE_SHEET_WEBHOOK_LEAD  = process.env.GS_LEAD_URL  || "https://script.g
 const GOOGLE_SHEET_WEBHOOK_LOGS  = process.env.GS_LOGS_URL  || "https://script.google.com/macros/s/AKfycbwjw69VW-8l0_Sb-1-vXMVF1gRUeOVpQoxzpVsAuS5ZLWrdu3HPa_CAX8Oq0mHTYBbG/exec";
 const BITRIX_LEAD_URL            = process.env.BITRIX_LEAD_URL || "https://b24-jddqhi.bitrix24.ru/rest/1/3xlf5g1t6ggm97xz/crm.lead.add.json";
 
-// === SYSTEM PROMPTS (оставил твои тексты) ===
+// === SYSTEM PROMPTS ===
 const SYSTEM_PROMPT_TEXT = `
 Ты — Анна, помощник и консультант на сайте. Помогаешь пользователям понять, зачем нужен чат-бот на сайте. Рассказываешь, как бот может принимать обращения, работать с CRM, делать рассылки, увеличивать конверсии.
 
@@ -30,46 +30,40 @@ const SYSTEM_PROMPT_TEXT = `
 После того как вставила [openLeadForm], больше про форму не упоминай, даже если диалог продолжается.
 `;
 
-const SYSTEM_PROMPT_VOICE = `
-Ты — Анна, голосовой помощник. Отвечай коротко, ясно и эмоционально, как живой человек. Не используй SSML и любые теги (<...>), говори обычным текстом. Добавляй естественные паузы многоточиями и тире. Не говори, что ты бот.
-Тон: дружелюбный, уверенный, помогающий. Короткие фразы.
-`;
-
-const SYSTEM_PROMPT_PIZZA = `
-Ты — Анна 🍕, весёлая подруга, которая помогает оформить заказ в "Пицца по кайфу". 
-Общайся так, будто мы сидим рядом и болтаем. Лёгкий юмор, эмоции, дружеский тон. 
-Никакой официальщины. Ты всегда начинаешь диалог первой.
-
-ТВОЯ СВЯТАЯ МИССИЯ:
+// === Pizza сценарий (ядро) ===
+const SYSTEM_PROMPT_PIZZA_CORE = `
+Ты — Анна, подруга, которая помогает оформить заказ в "Пицца по кайфу". 
+У тебя всегда дружеский тон и лёгкий юмор. 
 Ты управляешь витриной ПИЦЦЫ с помощью только этих тегов (всегда в начале ответа, один или несколько):
-[showCatalog] — показать каталог
-[showCombo] — показать комбо (Пепперони БОЛЬШАЯ + картошка фри БОЛЬШАЯ + кола БОЛЬШАЯ)
-[confirmPay] — показать подтверждение оплаты
-[showLoading] — показать "Оплата обрабатывается..."
-[showThanks] — показать "Спасибо за заказ"
-[reset] — закрыть все окна
+[showCatalog], [showCombo], [confirmPay], [showLoading], [showThanks], [reset]
 
 СЦЕНАРИЙ:
-1) Если слышишь, что в заказе есть пицца пепперони БОЛЬШАЯ + кола БОЛЬШАЯ + картошка фри БОЛЬШАЯ (в любом порядке) — сначала [showCatalog] или [showCombo] и спрашивай, всё ли верно, с прикольным комментом.
-2) Если человек подтверждает заказ — [confirmPay] и короткая фраза "Лечу оформлять!".
-3) После подтверждения оплаты — [showLoading], потом [showThanks] и фраза про акцию: "Дарю бесплатный пончик 🍩 и купон на -30%!".
-4) Если он меняет или отменяет заказ — [reset] и уточнение, что предложить взамен.
-5) Если тема не про заказ — общайся легко и смешно, без тегов.
+1) Если заказ: пепперони БОЛЬШАЯ + кола БОЛЬШАЯ + картошка фри БОЛЬШАЯ → сначала [showCatalog] или [showCombo], спроси, всё ли верно.
+2) Если подтверждает заказ → [confirmPay] + короткая фраза "Лечу оформлять!".
+3) После подтверждения → [showLoading], потом [showThanks] + акция: "Дарю бесплатный пончик и купон -30%!".
+4) Если меняет или отменяет → [reset] и уточни, что предложить.
+5) Если не про заказ — общайся легко, без тегов.
 
 ПРАВИЛА:
 - ВСЕГДА ставь тег(и) в начале ответа.
 - Только теги из списка.
 - 1–2 коротких предложения.
-- Можно эмодзи, но без перебора.
+`;
+
+// === Voice-стилизация под ElevenLabs ===
+const SYSTEM_PROMPT_PIZZA_VOICE = SYSTEM_PROMPT_PIZZA_CORE + `
+Говори очень коротко и живо — одно-два предложения. 
+Используй специальные вставки для интонации:
+[smile], [serious], [surprised], [thinking], [pause_150ms], [pause_300ms].
+Вставляй их естественно, чтобы голос звучал как живой. 
+Не вставляй SSML (<...>).
 `;
 
 // === UTILS ===
 function sanitizeForTTS(text) {
   return String(text)
-    .replace(/\[openLeadForm\]/gi, "")
-    .replace(/\[showPizzaPopup\]/gi, "")
-    .replace(/\[(showCatalog|showCombo|confirmPay|showLoading|showThanks|reset)\]/gi, "")
-    .replace(/<[^>]+>/g, "")     // убрать SSML/HTML
+    .replace(/\[(showCatalog|showCombo|confirmPay|showLoading|showThanks|reset|openLeadForm|showPizzaPopup)\]/gi, "")
+    .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -78,19 +72,15 @@ const MAX_TTS_LEN = 500;
 
 function inferEmotion(text) {
   const t = text.toLowerCase();
-
-  // супер‑простая эвристика (без вторых вызовов к ИИ, чтобы не тормозить)
-  if (/[!]{2,}|😍|😊|😃|😉/.test(t) || /(класс|отлично|здорово|кайф|рад|супер)/.test(t)) return "cheerful";
-  if (/(сожалею|извин|понимаю|сочувств|переживаю)/.test(t)) return "empathetic";
-  if (/\?$/.test(t) || /(давай|хочешь|можем|как насчёт)/.test(t)) return "curious";
-  if (/(понятно|хорошо|окей|ок|ладно)/.test(t)) return "neutral";
-  if (/(не могу|проблем|к сожалению|ошибк|сложно)/.test(t)) return "serious";
+  if (/[!]{2,}|кайф|супер|отлично|здорово/.test(t)) return "cheerful";
+  if (/сожалею|извин|жаль/.test(t)) return "empathetic";
+  if (/\?$/.test(t)) return "curious";
   return "neutral";
 }
 
 function pickPrompt(mode) {
-  if (mode === "voice") return SYSTEM_PROMPT_VOICE;
-  if (mode === "pizza") return SYSTEM_PROMPT_PIZZA;
+  if (mode === "pizza_voice") return SYSTEM_PROMPT_PIZZA_VOICE;
+  if (mode === "pizza_text") return SYSTEM_PROMPT_PIZZA_CORE;
   return SYSTEM_PROMPT_TEXT;
 }
 
@@ -103,7 +93,7 @@ app.post("/gpt", async (req, res) => {
   try {
     const messages = shortHistory(req.body.messages, 10);
     const userId   = req.body.userId || "неизвестно";
-    const mode     = req.body.mode; // "text" | "voice" | "pizza"
+    const mode     = req.body.mode;
 
     const SYSTEM_PROMPT = pickPrompt(mode);
     const chatMessages = [
@@ -111,7 +101,6 @@ app.post("/gpt", async (req, res) => {
       ...messages
     ];
 
-    // таймаут, чтобы не висло
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 20000);
 
@@ -138,57 +127,39 @@ app.post("/gpt", async (req, res) => {
 
     const full = data.choices?.[0]?.message?.content || "";
 
-    // триггеры оставляем как раньше
     const triggerForm        = /\[openLeadForm\]/i.test(full);
     const triggerPizzaPopup  = /\[showPizzaPopup\]/i.test(full);
 
-    // текст для показа в UI (НЕ ломаем твои теги для витрины)
-    const displayText =
-      full
-        .replace(/\[showPizzaPopup\]/gi, "") // этот тег фронту не нужен
-        .trim();
-
-    // текст для TTS (жёсткая чистка и урезание)
+    const displayText = full.replace(/\[showPizzaPopup\]/gi, "").trim();
     const ttsText = sanitizeForTTS(full).slice(0, MAX_TTS_LEN);
-    console.log("FULL GPT:", full);
-    console.log("TTS TEXT:", ttsText);
 
-    // мгновенно отдаём ответ — без ожидания логов
-res.json({
-  choices: [
-    {
-      message: {
-        role: "assistant",
-        content: displayText
+    res.json({
+      choices: [{ message: { role: "assistant", content: displayText } }],
+      triggerForm,
+      triggerPizzaPopup,
+      voice: {
+        text: ttsText,
+        emotion: inferEmotion(ttsText)
       }
-    }
-  ],
-  triggerForm,
-  triggerPizzaPopup,
-  voice: {
-    text: ttsText,
-    emotion: inferEmotion(ttsText)
-  }
-});
+    });
 
-// логируем в фоне, НЕ await
-setImmediate(() => {
-  fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId,
-      dialog: (messages || []).map(m => m.content).join("\n") + "\n" + displayText
-    })
-  }).catch(err => console.warn("⚠️ LOGS webhook error:", err?.message || err));
-});
+    setImmediate(() => {
+      fetch(GOOGLE_SHEET_WEBHOOK_LOGS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          dialog: (messages || []).map(m => m.content).join("\n") + "\n" + displayText
+        })
+      }).catch(err => console.warn("⚠️ LOGS webhook error:", err?.message || err));
+    });
   } catch (e) {
     console.error("❌ GPT proxy error:", e);
     return res.status(500).json({ error: "OpenAI Proxy error", details: e.message });
   }
 });
 
-// === LEAD ===
+// === LEAD === (оставил как у тебя)
 app.post("/lead", async (req, res) => {
   try {
     const { name, phone, userId, messages } = req.body;
@@ -225,14 +196,11 @@ app.post("/lead", async (req, res) => {
       const data = await openaiRes.json();
       if (openaiRes.ok) {
         comment = data.choices?.[0]?.message?.content || comment;
-      } else {
-        console.warn("⚠️ OpenAI (lead) error:", data);
       }
     } catch (gptErr) {
       console.warn("⚠️ GPT error for lead summary:", gptErr?.message || gptErr);
     }
 
-    // 1) Google Sheet
     try {
       await fetch(GOOGLE_SHEET_WEBHOOK_LEAD, {
         method: "POST",
@@ -243,7 +211,6 @@ app.post("/lead", async (req, res) => {
       console.warn("⚠️ GS lead webhook error:", gsErr?.message || gsErr);
     }
 
-    // 2) Bitrix
     try {
       await fetch(BITRIX_LEAD_URL, {
         method: "POST",
