@@ -73,6 +73,7 @@ const SYSTEM_PROMPT_PIZZA_VOICE = SYSTEM_PROMPT_PIZZA_CORE + `
 - Пиши без эмодзи.  
 - Всегда отвечай так, будто реально понимаешь собеседника.  
 - В нужный момент можешь сам предложить: «Хочешь покажу каталог?» или «Есть вариант с комбо».  
+`;
 
 // === UTILS ===
 function sanitizeForTTS(text) {
