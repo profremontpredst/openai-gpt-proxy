@@ -65,8 +65,8 @@ const SYSTEM_PROMPT_PIZZA_VOICE = SYSTEM_PROMPT_PIZZA_CORE + `
 - [reset] — когда нужно начать заново.  
 
 Ты можешь вставлять голосовые метки ElevenLabs, чтобы речь звучала естественнее:  
-[smiles], [serious], [gasps], [thinking], [pause_150ms], [pause_300ms], [whisper], [laughs], [sighs].  
-Используй их естественно в тексте, но не перебарщивай.  
+[smiles], [serious], [gasps], [thinking], [whisper], [laughs], [sighs].  
+Используй их по ситуации, но не перебарщивай.
 
 Правила:  
 - Используй только эти теги и вставки.  
