@@ -5,19 +5,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();               // ✅ объявляем ОДИН раз
+const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
-app.use(express.raw({ type: "audio/*", limit: "10mb" }));
-
-// Раздаём всё из public/
-app.use(express.static(path.join(__dirname, "public")));
 
 // === KEYS & WEBHOOKS ===
 const OPENAI_KEY = process.env.OPENAI_KEY;
@@ -40,6 +30,7 @@ const SYSTEM_PROMPT_TEXT = `
 После того как вставила [openLeadForm], больше про форму не упоминай, даже если диалог продолжается.
 `;
 
+// === Pizza сценарий (ядро) ===
 const SYSTEM_PROMPT_PIZZA_CORE = `
 Ты — Анна, подруга, которая помогает оформить заказ в "Пицца по кайфу". 
 У тебя всегда дружеский тон и лёгкий юмор. 
@@ -59,6 +50,7 @@ const SYSTEM_PROMPT_PIZZA_CORE = `
 - 1–2 коротких предложения.
 `;
 
+// === Voice-стилизация под ElevenLabs ===
 const SYSTEM_PROMPT_PIZZA_VOICE = SYSTEM_PROMPT_PIZZA_CORE + `
 Ты — Кирилл, голосовой AI-ассистент.  
 Веди себя как умный, живой человек. Общайся коротко (1–2 предложения), дружески и по-человечески.  
@@ -92,6 +84,7 @@ function sanitizeForTTS(text) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
 const MAX_TTS_LEN = 500;
 
 function inferEmotion(text) {
@@ -183,7 +176,7 @@ app.post("/gpt", async (req, res) => {
   }
 });
 
-// === LEAD ===
+// === LEAD === (оставил как у тебя)
 app.post("/lead", async (req, res) => {
   try {
     const { name, phone, userId, messages } = req.body;
@@ -256,58 +249,6 @@ app.post("/lead", async (req, res) => {
   } catch (err) {
     console.error("❌ Ошибка обработки формы:", err);
     return res.status(500).json({ error: "Ошибка сервера при получении формы" });
-  }
-});
-
-// === GPT-5 SPEECH-TO-SPEECH ===
-app.post("/voice-gpt5", async (req, res) => {
-  try {
-    if (!req.body || !req.body.length) {
-      return res.status(400).send("No audio received");
-    }
-
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-audio-preview", // поменяй на gpt-5-audio если есть доступ
-        input: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_audio",
-                audio: {
-                  data: req.body.toString("base64"),
-                  format: "wav"
-                }
-              }
-            ]
-          }
-        ],
-        modalities: ["audio"],
-        audio: { voice: "verse", format: "mp3" }
-      })
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).send(err);
-    }
-
-    const result = await response.json();
-    const audio_b64 = result.output[0]?.content[0]?.audio?.data;
-    if (!audio_b64) return res.status(500).send("No audio in response");
-
-    const buffer = Buffer.from(audio_b64, "base64");
-    res.set("Content-Type", "audio/mpeg");
-    res.send(buffer);
-  } catch (e) {
-    console.error("❌ /voice-gpt5 error:", e);
-    res.status(500).send("Server error");
   }
 });
 
