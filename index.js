@@ -147,7 +147,13 @@ app.post("/gpt", async (req, res) => {
     const triggerForm        = /\[openLeadForm\]/i.test(full);
     const triggerPizzaPopup  = /\[showPizzaPopup\]/i.test(full);
 
-    const displayText = full.replace(/\[showPizzaPopup\]/gi, "").trim();
+    // убираем все служебные теги из чата
+    const displayText = full
+      .replace(/\[showPizzaPopup\]/gi, "")
+      .replace(/\[openLeadForm\]/gi, "")
+      .trim();
+
+    // и для голоса тоже чистим (sanitizeForTTS режет всё лишнее)
     const ttsText = sanitizeForTTS(full).slice(0, MAX_TTS_LEN);
 
     res.json({
