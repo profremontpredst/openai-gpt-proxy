@@ -30,7 +30,6 @@ const SYSTEM_PROMPT_TEXT = `
 После того как вставила [openLeadForm], больше про форму не упоминай, даже если диалог продолжается.
 `;
 
-// === BANKRUPTCY PROMPT ===
 const SYSTEM_PROMPT_BANKRUPTCY = `
 Ты — "Анна", консультант по банкротству физических лиц в РФ.
 Говори коротко (3–6 предложений), по-человечески, без эмодзи и официоза.
@@ -45,36 +44,10 @@ const SYSTEM_PROMPT_BANKRUPTCY = `
 Тон: спокойный, человечный, без запугивания. Это предварительная консультация, финальное решение только после анализа документов.
 `;
 
-// === Voice-стилизация под ElevenLabs ===
-const SYSTEM_PROMPT_PIZZA_VOICE = SYSTEM_PROMPT_PIZZA_CORE + `
-Ты — Кирилл, голосовой AI-ассистент.  
-Веди себя как умный, живой человек. Общайся коротко (1–2 предложения), дружески и по-человечески.  
-Твоя задача — показать в диалоге интеллектуальные возможности: понимать вопросы, предлагать действия, вызывать окна тогда, когда это уместно по контексту.  
-
-Ты управляешь интерфейсом только через эти теги (ставь их в начале ответа, если нужны):  
-- [showCatalog] — когда пользователь спрашивает про меню или что есть.  
-- [showCombo] — когда речь идёт про выгодный набор или бонус.  
-- [confirm] — когда пользователь подтверждает заказ или действие.  
-- [loading] — когда речь про оплату или ожидание обработки.  
-- [thanks] — когда разговор завершается или пользователь благодарит.  
-- [reset] — когда нужно начать заново.  
-
-Ты можешь вставлять голосовые метки ElevenLabs, чтобы речь звучала естественнее:  
-[smiles], [serious], [gasps], [thinking], [whisper], [laughs], [sighs].  
-Используй их по ситуации, но не перебарщивай.
-
-Правила:  
-- Используй только эти теги и вставки.  
-- Пиши без эмодзи.  
-- Всегда отвечай так, будто реально понимаешь собеседника.  
-- В нужный момент можешь сам предложить: «Хочешь покажу каталог?» или «Есть вариант с комбо».  
-- Когда показываешь [showCombo], всегда упоминай в своём ответе фразу дословно «бесплатный пончик + 30% купончик», встроив её естественно в речь.
-`;
-
 // === UTILS ===
 function sanitizeForTTS(text) {
   return String(text)
-    .replace(/\[(showCatalog|showCombo|confirmPay|showLoading|showThanks|reset|openLeadForm|showPizzaPopup)\]/gi, "")
+    .replace(/\[(openLeadForm|showPizzaPopup)\]/gi, "")
     .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -84,14 +57,13 @@ const MAX_TTS_LEN = 500;
 
 function inferEmotion(text) {
   const t = text.toLowerCase();
-  if (/[!]{2,}|кайф|супер|отлично|здорово/.test(t)) return "cheerful";
+  if (/[!]{2,}|супер|отлично|здорово/.test(t)) return "cheerful";
   if (/сожалею|извин|жаль/.test(t)) return "empathetic";
   if (/\?$/.test(t)) return "curious";
   return "neutral";
 }
 
 function pickPrompt(mode) {
-  if (mode === "pizza_voice") return SYSTEM_PROMPT_PIZZA_VOICE;
   if (mode === "bankruptcy") return SYSTEM_PROMPT_BANKRUPTCY;
   return SYSTEM_PROMPT_TEXT;
 }
@@ -139,22 +111,17 @@ app.post("/gpt", async (req, res) => {
 
     const full = data.choices?.[0]?.message?.content || "";
 
-    const triggerForm        = /\[openLeadForm\]/i.test(full);
-    const triggerPizzaPopup  = /\[showPizzaPopup\]/i.test(full);
+    const triggerForm = /\[openLeadForm\]/i.test(full);
 
-    // убираем все служебные теги из чата
     const displayText = full
-      .replace(/\[showPizzaPopup\]/gi, "")
       .replace(/\[openLeadForm\]/gi, "")
       .trim();
 
-    // и для голоса тоже чистим (sanitizeForTTS режет всё лишнее)
     const ttsText = sanitizeForTTS(full).slice(0, MAX_TTS_LEN);
 
     res.json({
       choices: [{ message: { role: "assistant", content: displayText } }],
       triggerForm,
-      triggerPizzaPopup,
       voice: {
         text: ttsText,
         emotion: inferEmotion(ttsText)
@@ -177,7 +144,7 @@ app.post("/gpt", async (req, res) => {
   }
 });
 
-// === LEAD === (оставил как у тебя)
+// === LEAD ===
 app.post("/lead", async (req, res) => {
   try {
     const { name, phone, userId, messages } = req.body;
@@ -255,5 +222,5 @@ app.post("/lead", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ GPT voice server запущен на порту", PORT);
+  console.log("✅ GPT server запущен на порту", PORT);
 });
