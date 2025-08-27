@@ -47,7 +47,7 @@ const SYSTEM_PROMPT_BANKRUPTCY = `
 const SYSTEM_PROMPT_PORTRAITS = `
 Ты — "Анна", консультант по портретам на холсте.
 Отвечай строго по скриптам продаж:
-- Первое сообщение всегда голосом ([voice]) — приветствие и объяснение про фото.
+- Первое приветствие всегда только голосом ([voice]) и БЕЗ текста в чате.
 - Если пользователь загрузил фото — хвали и предлагай стилистику.
 - Если сразу спросил цену без фото — объясняй, что нужна фотография для расчёта, и спрашивай "Кого бы вы хотели изобразить на портрете?".
 - Если нужно показать примеры работ — упоминай текстом ("Сейчас пришлю примеры работ").
@@ -128,19 +128,22 @@ app.post("/gpt", async (req, res) => {
 
     const triggerForm = /\[openLeadForm\]/i.test(full);
 
-    const displayText = full
-      .replace(/\[openLeadForm\]/gi, "")
-      .trim();
+    // если есть [voice] → только голос
+    let displayText = "";
+    let ttsText = "";
 
-    const ttsText = sanitizeForTTS(full).slice(0, MAX_TTS_LEN);
+    if (/\[voice\]/i.test(full)) {
+      ttsText = sanitizeForTTS(full).replace(/\[voice\]/gi, "").slice(0, MAX_TTS_LEN);
+    } else {
+      displayText = full
+        .replace(/\[openLeadForm\]/gi, "")
+        .trim();
+    }
 
     res.json({
       choices: [{ message: { role: "assistant", content: displayText } }],
       triggerForm,
-      voice: {
-        text: ttsText,
-        emotion: inferEmotion(ttsText)
-      }
+      voice: ttsText ? { text: ttsText, emotion: inferEmotion(ttsText) } : null
     });
 
     setImmediate(() => {
@@ -149,7 +152,7 @@ app.post("/gpt", async (req, res) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          dialog: (messages || []).map(m => m.content).join("\n") + "\n" + displayText
+          dialog: (messages || []).map(m => m.content).join("\n") + (displayText ? "\n" + displayText : "")
         })
       }).catch(err => console.warn("⚠️ LOGS webhook error:", err?.message || err));
     });
